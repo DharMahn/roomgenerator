@@ -106,7 +106,7 @@ namespace WinFormsApp4
             }
         }
 
-        private void TryExpand(int x, int y, Connectivity direction)
+        private void TryExpand(int x, int y, Connectivity directionFrom)
         {
             if (x < 0 || x >= roomWidth || y < 0 || y >= roomHeight || roomLayout[x, y] != null)
             {
@@ -114,37 +114,36 @@ namespace WinFormsApp4
                 return;
             }
 
-            // The new tile must connect back to the tile we're expanding from.
-            Connectivity requiredConnectivity = GetOppositeDirection(direction);
+            // Ensure the new tile has an opening back to the tile we're expanding from.
+            Connectivity openingBack = GetOppositeDirection(directionFrom);
 
-            // Generate the new tile with required connectivity plus some random additional connectivity.
-            Connectivity newTileConnectivity = requiredConnectivity | GetRandomConnectivity();
+            // Generate the new tile with the opening back plus potentially more openings.
+            Connectivity newTileConnectivity = openingBack | GetRandomConnectivity();
             Trace.WriteLine($"Expanding at: {x};{y} this is going to be a {newTileConnectivity} metatile");
             roomLayout[x, y] = MetaTile.GenerateMetaTile(newTileConnectivity);
 
             // Correctly enqueue possible expansion directions from this new tile.
             foreach (var possibleDirection in ConnectivityExtensions.GetIndividualFlags(newTileConnectivity))
             {
-                // Directly compare possibleDirection with the direction we just came from.
-                if (possibleDirection != direction) // This ensures we don't backtrack on the next move.
+                if (possibleDirection != openingBack) // Ensure we're not adding the direction we came from
                 {
                     AddToQueue(x, y, possibleDirection);
                 }
             }
         }
 
-
-        private static Connectivity GetOppositeDirection(Connectivity direction)
+        private Connectivity GetOppositeDirection(Connectivity direction)
         {
-            return direction switch
+            switch (direction)
             {
-                Connectivity.Left => Connectivity.Right,
-                Connectivity.Right => Connectivity.Left,
-                Connectivity.Top => Connectivity.Bottom,
-                Connectivity.Bottom => Connectivity.Top,
-                _ => Connectivity.None,
-            };
+                case Connectivity.Left: return Connectivity.Right;
+                case Connectivity.Right: return Connectivity.Left;
+                case Connectivity.Top: return Connectivity.Bottom;
+                case Connectivity.Bottom: return Connectivity.Top;
+                default: return Connectivity.None;
+            }
         }
+
 
 
         private Connectivity GetRandomConnectivity()
@@ -256,7 +255,7 @@ namespace WinFormsApp4
         private void InitializeWalls()
         {
             // Calculate start and end points for the opening in the middle of each wall
-            int openingStart = META_TILE_SIZE/5; // Start at 25% to create a 50% opening
+            int openingStart = META_TILE_SIZE / 5; // Start at 25% to create a 50% opening
             int openingEnd = META_TILE_SIZE - openingStart; // End at 75%
 
             for (int x = 0; x < META_TILE_SIZE; x++)
