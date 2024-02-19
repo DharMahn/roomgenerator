@@ -17,7 +17,7 @@ namespace WinFormsApp4
         }
         protected override void OnShown(EventArgs e)
         {
-            RoomGenerator gen = new(10, 10);
+            RoomGenerator gen = new(100, 100);
             BackgroundImageLayout = ImageLayout.Stretch;
             room = gen.GenerateRoom();
             BackgroundImage = room.GenerateBitmap();
@@ -42,35 +42,37 @@ namespace WinFormsApp4
         }
     }
 
-    public class RoomGenerator(int roomWidth, int roomHeight)
+    public class RoomGenerator
     {
-        private int roomWidth = roomWidth, roomHeight = roomHeight;
-        private MetaTile[,] roomLayout = new MetaTile[roomWidth, roomHeight];
-        private Queue<(int x, int y, Connectivity direction)> expansionQueue = new Queue<(int x, int y, Connectivity direction)>();
-        private Random rng = new();
+        private int roomWidth, roomHeight;
+        private MetaTile[,] roomLayout;
+        private Queue<(int x, int y, Connectivity directionFrom)> expansionQueue = new Queue<(int x, int y, Connectivity directionFrom)>();
+        private Random rng = new Random();
+
+        public RoomGenerator(int roomWidth, int roomHeight)
+        {
+            this.roomWidth = roomWidth;
+            this.roomHeight = roomHeight;
+            this.roomLayout = new MetaTile[roomWidth, roomHeight];
+        }
 
         public Room GenerateRoom()
         {
             // Initialize with a starting MetaTile that opens in at least one direction
-            int startX = rng.Next(1, roomWidth - 1);
-            int startY = rng.Next(1, roomHeight - 1);
-            var startDirection = (Connectivity)rng.Next(15) + 1;
-            roomLayout[startX, startY] = MetaTile.GenerateMetaTile(startDirection);
-            Trace.WriteLine("Started at: " + startX + ";" + startY);
-            // Add open directions to the queue
-            foreach (Connectivity direction in ConnectivityExtensions.GetIndividualFlags(startDirection))
-            {
-                AddToQueue(startX, startY, direction);
-            }
+            int startX = rng.Next(roomWidth);
+            int startY = rng.Next(roomHeight);
+            Connectivity startDirection = (Connectivity)rng.Next(1, 16); // Exclude None, include All
 
-            // Process queue until empty
+            roomLayout[startX, startY] = MetaTile.GenerateMetaTile(startDirection);
+            Debug.WriteLine($"Started at: {startX};{startY} with direction {startDirection}");
+
+            // Add open directions to the queue for the starting tile
+            AddToQueue(startX, startY, startDirection);
+
             while (expansionQueue.Count > 0)
             {
-                var (x, y, direction) = expansionQueue.Dequeue();
-                //Form1.Instance.BackgroundImage = new Room(roomLayout).GenerateBitmap();
-                //Application.DoEvents();
-                //Thread.Sleep(1000);
-                TryExpand(x, y, direction);
+                var (x, y, directionFrom) = expansionQueue.Dequeue();
+                TryExpand(x, y, directionFrom);
             }
 
             // Fill the rest with closed tiles
@@ -81,58 +83,17 @@ namespace WinFormsApp4
 
         private void AddToQueue(int x, int y, Connectivity direction)
         {
-            int nextX = x, nextY = y;
-            switch (direction)
+            // This method now adds all possible expansion directions to the queue based on the current tile's connectivity
+            foreach (var directionFlag in ConnectivityExtensions.GetIndividualFlags(direction))
             {
-                case Connectivity.Left:
-                    nextX--;
-                    break;
-                case Connectivity.Right:
-                    nextX++;
-                    break;
-                case Connectivity.Top:
-                    nextY--;
-                    break;
-                case Connectivity.Bottom:
-                    nextY++;
-                    break;
-            }
-
-            if (nextX >= 0 && nextX < roomWidth && nextY >= 0 && nextY < roomHeight && roomLayout[nextX, nextY] == null)
-            {
-                // Assuming we're always expanding from an open tile, we add the opposite direction to ensure connectivity
-                Connectivity oppositeDirection = GetOppositeDirection(direction);
-                expansionQueue.Enqueue((nextX, nextY, oppositeDirection));
-            }
-        }
-
-        private void TryExpand(int x, int y, Connectivity directionFrom)
-        {
-            if (x < 0 || x >= roomWidth || y < 0 || y >= roomHeight || roomLayout[x, y] != null)
-            {
-                // Out of bounds or already filled
-                return;
-            }
-
-            // Ensure the new tile has an opening back to the tile we're expanding from.
-            Connectivity openingBack = GetOppositeDirection(directionFrom);
-
-            // Generate the new tile with the opening back plus potentially more openings.
-            Connectivity newTileConnectivity = openingBack | GetRandomConnectivity();
-            Trace.WriteLine($"Expanding at: {x};{y} this is going to be a {newTileConnectivity} metatile");
-            roomLayout[x, y] = MetaTile.GenerateMetaTile(newTileConnectivity);
-
-            // Correctly enqueue possible expansion directions from this new tile.
-            foreach (var possibleDirection in ConnectivityExtensions.GetIndividualFlags(newTileConnectivity))
-            {
-                if (possibleDirection != openingBack) // Ensure we're not adding the direction we came from
+                var (nextX, nextY) = GetNextCoordinates(x, y, directionFlag);
+                if (IsInBounds(nextX, nextY) && roomLayout[nextX, nextY] == null)
                 {
-                    AddToQueue(x, y, possibleDirection);
+                    expansionQueue.Enqueue((nextX, nextY, GetOppositeDirection(directionFlag)));
                 }
             }
         }
-
-        private Connectivity GetOppositeDirection(Connectivity direction)
+        private static Connectivity GetOppositeDirection(Connectivity direction)
         {
             switch (direction)
             {
@@ -143,15 +104,43 @@ namespace WinFormsApp4
                 default: return Connectivity.None;
             }
         }
-
-
-
-        private Connectivity GetRandomConnectivity()
+        private void TryExpand(int x, int y, Connectivity directionFrom)
         {
-            // Generate a random connectivity; this is a placeholder for more sophisticated logic.
-            return (Connectivity)rng.Next(15) + 1;
+            if (!IsInBounds(x, y) || roomLayout[x, y] != null) return;
+
+            // Generate the new tile with at least the opening back to the tile we're expanding from
+            Connectivity newTileConnectivity = directionFrom | GetRandomConnectivityExcluding(directionFrom);
+
+            roomLayout[x, y] = MetaTile.GenerateMetaTile(newTileConnectivity);
+            Debug.WriteLine($"Expanding at: {x};{y} with connectivity: {newTileConnectivity}");
+
+            AddToQueue(x, y, newTileConnectivity);
         }
 
+        private static (int, int) GetNextCoordinates(int x, int y, Connectivity direction)
+        {
+            switch (direction)
+            {
+                case Connectivity.Left: return (x - 1, y);
+                case Connectivity.Right: return (x + 1, y);
+                case Connectivity.Top: return (x, y - 1);
+                case Connectivity.Bottom: return (x, y + 1);
+                default: return (x, y); // Should never happen
+            }
+        }
+
+        private bool IsInBounds(int x, int y) => x >= 0 && x < roomWidth && y >= 0 && y < roomHeight;
+
+        private Connectivity GetRandomConnectivityExcluding(Connectivity exclude)
+        {
+            // Generate a random connectivity that does not include 'exclude'. This ensures variety in connectivity.
+            Connectivity result;
+            do
+            {
+                result = (Connectivity)rng.Next(1, 16);
+            } while (result == exclude || !ConnectivityExtensions.GetIndividualFlags(result).Contains(exclude));
+            return result;
+        }
 
         private void FillRemainingWithClosedTiles()
         {
@@ -200,7 +189,7 @@ namespace WinFormsApp4
                             for (int j = 0; j < MetaTile.META_TILE_SIZE; j++)
                             {
                                 bool isCheckerBlack = (x + y) % 2 == 0; // Black for even sums, green for odd sums
-                                Color color = isCheckerBlack ? Color.Green : Color.Black;
+                                Color color = isCheckerBlack ? Color.Black : Color.Black;
 
                                 // Assuming the metaTile size matches the Cells array size for simplicity
                                 // Check if the cell is a platform for color, otherwise use the checkerboard logic
