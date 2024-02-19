@@ -6,22 +6,156 @@ namespace WinFormsApp4
 {
     public partial class Form1 : Form
     {
-        public Room room;
+        //public Room room;
 
         private static Form1 _instance = null;
+        const int TILE_SIZE = 10;
         public static Form1 Instance => _instance ??= new Form1();
+        private TileType[,] metatileGrid = new TileType[10, 10];
+        TileType selectedType = TileType.Air;
+        private bool isMousePressed = false; // Track if the mouse is pressed
+        private Dictionary<string, bool> entryPoints = new()
+        {
+            {"TOP", false},
+            {"BOTTOM", false},
+            {"LEFT", false},
+            {"RIGHT", false}
+        };
+
         public Form1()
         {
             InitializeComponent();
             DoubleBuffered = true;
+            buttonBottom.Click += (sender, e) => ToggleEntryPoint((Control)sender!);
+            buttonLeft.Click += (sender, e) => ToggleEntryPoint((Control)sender!);
+            buttonRight.Click += (sender, e) => ToggleEntryPoint((Control)sender!);
+            buttonTop.Click += (sender, e) => ToggleEntryPoint((Control)sender!);
+            MouseWheel += Form_MouseWheel;
+            TileCanvas.MouseDown += TileCanvas_MouseDown;
+            TileCanvas.MouseMove += TileCanvas_MouseMove;
+            TileCanvas.MouseUp += TileCanvas_MouseUp;
+        }
+        private void TileCanvas_MouseDown(object sender, MouseEventArgs e)
+        {
+            isMousePressed = true; // Set flag to true when mouse button is pressed
+            ModifyTile(sender, e); // Call the tile modification logic
+        }
+
+        private void TileCanvas_MouseMove(object sender, MouseEventArgs e)
+        {
+            if (isMousePressed) // Check if the mouse button is still pressed
+            {
+                ModifyTile(sender, e); // Continue modifying tiles if the mouse is dragged
+            }
+        }
+
+        private void TileCanvas_MouseUp(object sender, MouseEventArgs e)
+        {
+            isMousePressed = false; // Reset flag when mouse button is released
+        }
+
+        private void Form_MouseWheel(object sender, MouseEventArgs e)
+        {
+            bool scrollUp = e.Delta > 0;
+
+            // Convert the enum to a list to easily navigate through it
+            var tileTypes = Enum.GetValues(typeof(TileType)).Cast<TileType>().ToList();
+            int currentIndex = tileTypes.IndexOf(selectedType);
+
+            // Cycle through the tile types based on scroll direction
+            if (scrollUp)
+            {
+                // Scroll up: move to the next tile type, loop to the start if at the end
+                currentIndex = (currentIndex + 1) % tileTypes.Count;
+            }
+            else
+            {
+                // Scroll down: move to the previous tile type, loop to the end if at the start
+                currentIndex = (currentIndex - 1 + tileTypes.Count) % tileTypes.Count;
+            }
+
+            // Update the selected tile type
+            selectedType = tileTypes[currentIndex];
+            Text = $"Selected: {selectedType}";
+
         }
         protected override void OnShown(EventArgs e)
         {
-            RoomGenerator gen = new(100, 100);
-            BackgroundImageLayout = ImageLayout.Stretch;
-            room = gen.GenerateRoom();
-            BackgroundImage = room.GenerateBitmap();
+            //RoomGenerator gen = new(10, 10);
+            //TileCanvas.BackgroundImageLayout = ImageLayout.Stretch;
+            //room = gen.GenerateRoom();
+            //TileCanvas.BackgroundImage = room.GenerateBitmap();
         }
+        private void ToggleEntryPoint(Control control)
+        {
+            entryPoints[control.Text] = !entryPoints[control.Text];
+            // Update button color
+            switch (control.Text)
+            {
+                case "TOP": UpdateButtonColor(buttonTop, control.Text); break;
+                case "BOTTOM": UpdateButtonColor(buttonBottom, control.Text); break;
+                case "LEFT": UpdateButtonColor(buttonLeft, control.Text); break;
+                case "RIGHT": UpdateButtonColor(buttonRight, control.Text); break;
+            }
+        }
+        private void ModifyTile(object sender, MouseEventArgs e)
+        {
+            PictureBox pictureBox = sender as PictureBox;
+            int controlWidth = pictureBox.Width;
+            int controlHeight = pictureBox.Height;
+
+            // Calculate the size of a tile based on the PictureBox size
+            float tileSizeWidth = (float)controlWidth / TILE_SIZE;
+            float tileSizeHeight = (float)controlHeight / TILE_SIZE;
+
+            // Calculate the tile index based on the cursor position
+            int tileX = (int)(e.X / tileSizeWidth);
+            int tileY = (int)(e.Y / tileSizeHeight);
+
+            // Ensure tileX and tileY are within bounds
+            tileX = Math.Min(tileX, TILE_SIZE - 1);
+            tileY = Math.Min(tileY, TILE_SIZE - 1);
+
+            if (tileX < TILE_SIZE && tileY < TILE_SIZE)
+            {
+                // Toggle tile state and refresh display
+                metatileGrid[tileX, tileY] = selectedType; // Assuming metatileGrid is updated to use TileType
+                pictureBox.Invalidate(); // Trigger repaint
+            }
+        }
+        private void UpdateButtonColor(Button button, string point)
+        {
+            button.BackColor = entryPoints[point] ? Color.Green : Color.Red;
+        }
+        private void TileCanvas_Paint(object sender, PaintEventArgs e)
+        {
+            e.Graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+            int cellW = ((Control)sender).Width / TILE_SIZE;
+            int cellH = ((Control)sender).Height / TILE_SIZE;
+            for (int y = 0; y < TILE_SIZE; y++)
+            {
+                for (int x = 0; x < TILE_SIZE; x++)
+                {
+                    switch (metatileGrid[x, y])
+                    {
+                        case TileType.Air:
+                            break;
+                        case TileType.Platform:
+                            e.Graphics.FillRectangle(Brushes.Black, x * cellW, y * cellH, cellW, cellH);
+                            break;
+                        case TileType.Portal:
+                            e.Graphics.FillRectangle(Brushes.Blue, x * cellW, y * cellH, cellW, cellH);
+                            break;
+                    }
+                }
+            }
+        }
+    }
+    public enum TileType
+    {
+        Air,
+        Platform,
+        Portal
     }
     public static class ConnectivityExtensions
     {
