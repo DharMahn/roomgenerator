@@ -139,6 +139,7 @@ namespace WinFormsApp4
                     // Set the tile to the selected type on left-click
                     currentTile[tileX, tileY] = selectedType;
                 }
+                UpdateMetatileConnectivity();
 
                 pictureBox.Invalidate(); // Trigger repaint
             }
@@ -153,7 +154,35 @@ namespace WinFormsApp4
                 control.BackColor = isOpen ? Color.Green : Color.Red;
             }
         }
+        private void UpdateMetatileConnectivity()
+        {
+            int middle = MetaTile.META_TILE_SIZE / 2;
+            // For even-sized metatiles, check two middle cells; for odd, just the center cell
+            bool isSizeEven = MetaTile.META_TILE_SIZE % 2 == 0;
 
+            // Check each edge (TOP, BOTTOM, LEFT, RIGHT) based on metatile size
+            // Assuming "Air" means the tile is empty and thus an opening exists
+            if (isSizeEven)
+            {
+                currentTile.Connectivity =
+                    (currentTile[middle - 1, 0] == TileType.Air || currentTile[middle, 0] == TileType.Air ? Connectivity.Top : 0) |
+                    (currentTile[middle - 1, MetaTile.META_TILE_SIZE - 1] == TileType.Air || currentTile[middle, MetaTile.META_TILE_SIZE - 1] == TileType.Air ? Connectivity.Bottom : 0) |
+                    (currentTile[0, middle - 1] == TileType.Air || currentTile[0, middle] == TileType.Air ? Connectivity.Left : 0) |
+                    (currentTile[MetaTile.META_TILE_SIZE - 1, middle - 1] == TileType.Air || currentTile[MetaTile.META_TILE_SIZE - 1, middle] == TileType.Air ? Connectivity.Right : 0);
+            }
+            else
+            {
+                currentTile.Connectivity =
+                    (currentTile[middle, 0] == TileType.Air ? Connectivity.Top : 0) |
+                    (currentTile[middle, MetaTile.META_TILE_SIZE - 1] == TileType.Air ? Connectivity.Bottom : 0) |
+                    (currentTile[0, middle] == TileType.Air ? Connectivity.Left : 0) |
+                    (currentTile[MetaTile.META_TILE_SIZE - 1, middle] == TileType.Air ? Connectivity.Right : 0);
+            }
+            UpdateSideColor(buttonTop);
+            UpdateSideColor(buttonLeft);
+            UpdateSideColor(buttonRight);
+            UpdateSideColor(buttonBottom);
+        }
         private void TileCanvas_Paint(object sender, PaintEventArgs e)
         {
             e.Graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
@@ -371,7 +400,7 @@ namespace WinFormsApp4
         {
             foreach (Connectivity flag in Enum.GetValues(typeof(Connectivity)))
             {
-                if (flag == Connectivity.None || flag == Connectivity.All)
+                if (flag == Connectivity.None)
                 {
                     continue; // Skip the 'None' value
                 }
@@ -467,7 +496,7 @@ namespace WinFormsApp4
             {
                 // Select a random metatile from the list, ensuring it can connect in the required direction
                 MetaTile selectedTile = null;
-                var compatibleTiles = metaTiles.Where(mt => ConnectivityExtensions.GetIndividualFlags(mt.Connectivity).Contains(GetOppositeDirection(directionFrom))).ToList();
+                var compatibleTiles = metaTiles.Where(mt => ConnectivityExtensions.GetIndividualFlags(mt.Connectivity).Contains(directionFrom)).ToList();
                 if (compatibleTiles.Any())
                 {
                     selectedTile = compatibleTiles[rng.Next(compatibleTiles.Count)].DeepCopy(); // Use DeepCopy to avoid modifying the original
@@ -592,7 +621,6 @@ namespace WinFormsApp4
     {
         public const int META_TILE_SIZE = 10;
         public Connectivity Connectivity { get; set; }
-
         public TileType[] Tiles { get; set; }
         public MetaTile(Connectivity connectivity) : this()
         {

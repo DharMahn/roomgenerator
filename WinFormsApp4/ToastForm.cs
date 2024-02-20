@@ -19,7 +19,6 @@ namespace WinFormsApp4
         {
             SetStyle(ControlStyles.Selectable, false);
             FormBorderStyle = FormBorderStyle.None;
-            //TopMost = true;
             ShowInTaskbar = false;
             BackColor = Color.Gray;
             Opacity = 0.5;
