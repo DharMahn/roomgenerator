@@ -33,7 +33,10 @@
             buttonLeft = new Button();
             buttonRight = new Button();
             buttonBottom = new Button();
+            button1 = new Button();
+            RoomCanvas = new PictureBox();
             ((System.ComponentModel.ISupportInitialize)TileCanvas).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)RoomCanvas).BeginInit();
             SuspendLayout();
             // 
             // TileCanvas
@@ -82,11 +85,33 @@
             buttonBottom.Text = "BOTTOM";
             buttonBottom.UseVisualStyleBackColor = true;
             // 
+            // button1
+            // 
+            button1.Location = new Point(653, 12);
+            button1.Name = "button1";
+            button1.Size = new Size(135, 63);
+            button1.TabIndex = 5;
+            button1.Text = "Save tiles to file";
+            button1.UseVisualStyleBackColor = true;
+            button1.Click += button1_Click;
+            // 
+            // RoomCanvas
+            // 
+            RoomCanvas.BackColor = SystemColors.ControlDark;
+            RoomCanvas.Location = new Point(488, 81);
+            RoomCanvas.Name = "RoomCanvas";
+            RoomCanvas.Size = new Size(300, 300);
+            RoomCanvas.TabIndex = 6;
+            RoomCanvas.TabStop = false;
+            RoomCanvas.MouseMove += RoomCanvas_MouseMove;
+            // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(800, 463);
+            Controls.Add(RoomCanvas);
+            Controls.Add(button1);
             Controls.Add(buttonBottom);
             Controls.Add(buttonRight);
             Controls.Add(buttonLeft);
@@ -94,7 +119,10 @@
             Controls.Add(TileCanvas);
             Name = "Form1";
             Text = "Form1";
+            KeyDown += Form1_KeyDown;
+            Move += Form1_Move;
             ((System.ComponentModel.ISupportInitialize)TileCanvas).EndInit();
+            ((System.ComponentModel.ISupportInitialize)RoomCanvas).EndInit();
             ResumeLayout(false);
         }
 
@@ -105,5 +133,7 @@
         private Button buttonLeft;
         private Button buttonRight;
         private Button buttonBottom;
+        private Button button1;
+        private PictureBox RoomCanvas;
     }
 }

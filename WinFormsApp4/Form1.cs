@@ -1,7 +1,7 @@
 using System.Diagnostics;
-using System.Drawing;
-using static WinFormsApp4.Room;
-
+using System.Drawing.Imaging;
+using System.Runtime.Serialization;
+using System.Text.Json;
 namespace WinFormsApp4
 {
     public partial class Form1 : Form
@@ -9,31 +9,46 @@ namespace WinFormsApp4
         //public Room room;
 
         private static Form1 _instance = null;
-        const int TILE_SIZE = 10;
         public static Form1 Instance => _instance ??= new Form1();
-        private TileType[,] metatileGrid = new TileType[10, 10];
-        TileType selectedType = TileType.Air;
+        TileType selectedType = TileType.Platform;
         private bool isMousePressed = false; // Track if the mouse is pressed
-        private Dictionary<string, bool> entryPoints = new()
+        private Dictionary<string, Connectivity> controlTextToConnectivity = new Dictionary<string, Connectivity>
         {
-            {"TOP", false},
-            {"BOTTOM", false},
-            {"LEFT", false},
-            {"RIGHT", false}
+            ["TOP"] = Connectivity.Top,
+            ["BOTTOM"] = Connectivity.Bottom,
+            ["LEFT"] = Connectivity.Left,
+            ["RIGHT"] = Connectivity.Right
         };
-
+        Room previewRoom;
+        MetaTile currentTile;
+        private int currentMetatileIndex = -1; // Start with -1 indicating no selection
+        public static List<MetaTile> metatileList = new();
         public Form1()
         {
             InitializeComponent();
+            currentTile = new();
+            KeyPreview = true;
+            currentTile = new();
             DoubleBuffered = true;
-            buttonBottom.Click += (sender, e) => ToggleEntryPoint((Control)sender!);
-            buttonLeft.Click += (sender, e) => ToggleEntryPoint((Control)sender!);
-            buttonRight.Click += (sender, e) => ToggleEntryPoint((Control)sender!);
-            buttonTop.Click += (sender, e) => ToggleEntryPoint((Control)sender!);
+
             MouseWheel += Form_MouseWheel;
             TileCanvas.MouseDown += TileCanvas_MouseDown;
             TileCanvas.MouseMove += TileCanvas_MouseMove;
             TileCanvas.MouseUp += TileCanvas_MouseUp;
+        }
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            LoadMetatiles();
+            buttonBottom.Click += (sender, e) => ToggleEntryPoint((Control)sender!);
+            UpdateSideColor(buttonBottom);
+            buttonLeft.Click += (sender, e) => ToggleEntryPoint((Control)sender!);
+            UpdateSideColor(buttonLeft);
+            buttonRight.Click += (sender, e) => ToggleEntryPoint((Control)sender!);
+            UpdateSideColor(buttonRight);
+            buttonTop.Click += (sender, e) => ToggleEntryPoint((Control)sender!);
+            UpdateSideColor(buttonTop);
+            SetTitle();
         }
         private void TileCanvas_MouseDown(object sender, MouseEventArgs e)
         {
@@ -76,28 +91,24 @@ namespace WinFormsApp4
 
             // Update the selected tile type
             selectedType = tileTypes[currentIndex];
-            Text = $"Selected: {selectedType}";
+            SetTitle();
 
         }
-        protected override void OnShown(EventArgs e)
+        private void SetTitle()
         {
-            //RoomGenerator gen = new(10, 10);
-            //TileCanvas.BackgroundImageLayout = ImageLayout.Stretch;
-            //room = gen.GenerateRoom();
-            //TileCanvas.BackgroundImage = room.GenerateBitmap();
+            Text = $"Selected type: {selectedType} | Selected metatile: {(currentMetatileIndex == -1 ? "New metatile" : $"{currentMetatileIndex + 1}/{metatileList.Count}")}";
         }
+
         private void ToggleEntryPoint(Control control)
         {
-            entryPoints[control.Text] = !entryPoints[control.Text];
-            // Update button color
-            switch (control.Text)
+            if (controlTextToConnectivity.TryGetValue(control.Text, out Connectivity connectivity))
             {
-                case "TOP": UpdateButtonColor(buttonTop, control.Text); break;
-                case "BOTTOM": UpdateButtonColor(buttonBottom, control.Text); break;
-                case "LEFT": UpdateButtonColor(buttonLeft, control.Text); break;
-                case "RIGHT": UpdateButtonColor(buttonRight, control.Text); break;
+                // Toggle the specific connectivity bit using bitwise XOR
+                currentTile.Connectivity ^= connectivity;
+                UpdateSideColor(control);
             }
         }
+
         private void ModifyTile(object sender, MouseEventArgs e)
         {
             PictureBox pictureBox = sender as PictureBox;
@@ -105,38 +116,54 @@ namespace WinFormsApp4
             int controlHeight = pictureBox.Height;
 
             // Calculate the size of a tile based on the PictureBox size
-            float tileSizeWidth = (float)controlWidth / TILE_SIZE;
-            float tileSizeHeight = (float)controlHeight / TILE_SIZE;
+            float tileSizeWidth = (float)controlWidth / MetaTile.META_TILE_SIZE;
+            float tileSizeHeight = (float)controlHeight / MetaTile.META_TILE_SIZE;
 
             // Calculate the tile index based on the cursor position
             int tileX = (int)(e.X / tileSizeWidth);
             int tileY = (int)(e.Y / tileSizeHeight);
 
             // Ensure tileX and tileY are within bounds
-            tileX = Math.Min(tileX, TILE_SIZE - 1);
-            tileY = Math.Min(tileY, TILE_SIZE - 1);
+            tileX = Math.Max(0, Math.Min(tileX, MetaTile.META_TILE_SIZE - 1));
+            tileY = Math.Max(0, Math.Min(tileY, MetaTile.META_TILE_SIZE - 1));
 
-            if (tileX < TILE_SIZE && tileY < TILE_SIZE)
+            if (tileX < MetaTile.META_TILE_SIZE && tileY < MetaTile.META_TILE_SIZE)
             {
-                // Toggle tile state and refresh display
-                metatileGrid[tileX, tileY] = selectedType; // Assuming metatileGrid is updated to use TileType
+                if (e.Button == MouseButtons.Right)
+                {
+                    // Increment the TileType by 1, loop around if necessary
+                    currentTile[tileX, tileY] = TileType.Air;
+                }
+                else if (e.Button == MouseButtons.Left)
+                {
+                    // Set the tile to the selected type on left-click
+                    currentTile[tileX, tileY] = selectedType;
+                }
+
                 pictureBox.Invalidate(); // Trigger repaint
             }
         }
-        private void UpdateButtonColor(Button button, string point)
+        private void UpdateSideColor(Control control)
         {
-            button.BackColor = entryPoints[point] ? Color.Green : Color.Red;
+            // Use the control's text to find the corresponding Connectivity value
+            if (controlTextToConnectivity.TryGetValue(control.Text, out Connectivity connectivity))
+            {
+                // Determine if the current tile's openings include this connectivity
+                bool isOpen = (currentTile.Connectivity & connectivity) != 0;
+                control.BackColor = isOpen ? Color.Green : Color.Red;
+            }
         }
+
         private void TileCanvas_Paint(object sender, PaintEventArgs e)
         {
             e.Graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
-            int cellW = ((Control)sender).Width / TILE_SIZE;
-            int cellH = ((Control)sender).Height / TILE_SIZE;
-            for (int y = 0; y < TILE_SIZE; y++)
+            int cellW = ((Control)sender).Width / MetaTile.META_TILE_SIZE;
+            int cellH = ((Control)sender).Height / MetaTile.META_TILE_SIZE;
+            for (int y = 0; y < MetaTile.META_TILE_SIZE; y++)
             {
-                for (int x = 0; x < TILE_SIZE; x++)
+                for (int x = 0; x < MetaTile.META_TILE_SIZE; x++)
                 {
-                    switch (metatileGrid[x, y])
+                    switch (currentTile[x, y])
                     {
                         case TileType.Air:
                             break;
@@ -150,6 +177,187 @@ namespace WinFormsApp4
                 }
             }
         }
+
+        private void Form1_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.KeyCode == Keys.N)
+            {
+                currentMetatileIndex = -1;
+                UpdateUI();
+                e.Handled = true;
+            }
+            else if (e.KeyCode == Keys.C)
+            {
+                ResetCurrentMetatile();
+                UpdateUI();
+            }
+            else if (e.KeyCode == Keys.S)
+            {
+                // Save the current metatile to the list
+                SaveCurrentMetatile(); // Assuming this method adds the metatile to your list
+                e.Handled = true; // Prevent further processing of the key event
+                ShowToastNotification($"Saved. {metatileList.Count} metatiles are present.");
+            }
+            else if (e.KeyCode == Keys.A) // Select the previous metatile
+            {
+                if (metatileList.Count > 0)
+                {
+                    currentMetatileIndex = (currentMetatileIndex - 1 + metatileList.Count) % metatileList.Count;
+                    LoadMetatileFromList(currentMetatileIndex);
+                }
+                SetTitle();
+                e.Handled = true;
+            }
+            else if (e.KeyCode == Keys.D) // Select the next metatile
+            {
+                if (metatileList.Count > 0)
+                {
+                    currentMetatileIndex = (currentMetatileIndex + 1) % metatileList.Count;
+                    LoadMetatileFromList(currentMetatileIndex);
+                }
+                SetTitle();
+                e.Handled = true;
+            }
+            else if (e.KeyCode == Keys.R)
+            {
+                if (currentMetatileIndex != -1)
+                {
+                    metatileList.RemoveAt(currentMetatileIndex);
+                    ResetCurrentMetatile();
+                    UpdateUI();
+                }
+            }
+            else if (e.KeyCode == Keys.G)
+            {
+                RoomGenerator gen = new(10, 10);
+                previewRoom = gen.GenerateRoom(metatileList); // Assuming GeneratePreviewRoom is your method
+                RoomCanvas.BackgroundImageLayout = ImageLayout.Stretch;
+                RoomCanvas.BackgroundImage = previewRoom.GenerateBitmap(); // Generate and set the background image
+                e.Handled = true; // Mark the event as handled
+            }
+        }
+        private void LoadMetatileFromList(int index)
+        {
+            if (index >= 0 && index < metatileList.Count)
+            {
+                // Assuming you have a method or logic to display or edit the selected metatile
+                // For example, this could update the UI to reflect the metatile at 'index'
+                currentTile = metatileList[index]; // Set the currentTile to the selected one for editing
+                UpdateUI();
+            }
+        }
+
+        private void UpdateUI()
+        {
+            UpdateSideColor(buttonTop);
+            UpdateSideColor(buttonLeft);
+            UpdateSideColor(buttonRight);
+            UpdateSideColor(buttonBottom);
+            SetTitle();
+            TileCanvas.Invalidate(); // Custom method to refresh the display/editor
+        }
+
+        public void ResetCurrentMetatile()
+        {
+            currentTile = new();
+            currentMetatileIndex = -1;
+        }
+        public void SaveCurrentMetatile()
+        {
+            if (currentMetatileIndex != -1)
+            {
+                metatileList[currentMetatileIndex] = currentTile;
+            }
+            else
+            {
+                metatileList.Add(currentTile);
+                currentTile = currentTile.DeepCopy();
+            }
+        }
+        public void SaveMetatiles(string filePath)
+        {
+            var options = new JsonSerializerOptions { WriteIndented = true };
+            string jsonString = JsonSerializer.Serialize(metatileList, options);
+            File.WriteAllText(filePath, jsonString);
+            ShowToastNotification($"Saved {metatileList.Count} tiles.");
+        }
+        public void LoadMetatiles(string filePath = @"./metatiles.json")
+        {
+            List<MetaTile> metatiles = null;
+            if (!File.Exists(filePath))
+            {
+                ShowToastNotification("No metatiles found in executing folder.");
+            }
+            else
+            {
+                string jsonString = File.ReadAllText(filePath);
+                metatiles = JsonSerializer.Deserialize<List<MetaTile>>(jsonString);
+                ShowToastNotification($"Loaded {metatiles.Count} tiles.");
+            }
+            metatileList = metatiles ?? new();
+        }
+        private ToastForm toastForm;
+
+        private void ShowToastNotification(string message, int duration = 1000)
+        {
+            // Close existing toast if any
+            toastForm?.Close();
+
+            toastForm = new ToastForm(message, duration);
+            toastForm.Show();
+            toastForm.PositionRelativeToForm(this);
+        }
+
+        // Main form's Move event handler
+        private void Form1_Move(object sender, EventArgs e)
+        {
+            if (toastForm != null && !toastForm.IsDisposed)
+            {
+                toastForm.PositionRelativeToForm(this);
+            }
+        }
+
+        private void button1_Click(object sender, EventArgs e)
+        {
+            SaveMetatiles("metatiles.json");
+        }
+        ToolTip toolTip = new();
+        private void RoomCanvas_MouseMove(object sender, MouseEventArgs e)
+        {
+            if (previewRoom == null)
+            {
+                return;
+            }
+            // Assuming 'roomWidth' and 'roomHeight' represent the dimensions of the room in metatiles
+            int controlWidth = RoomCanvas.Width;
+            int controlHeight = RoomCanvas.Height;
+
+            // Calculate the size of a metatile based on the PictureBox size and room dimensions
+            float metatilePixelWidth = (float)controlWidth / previewRoom.Width;
+            float metatilePixelHeight = (float)controlHeight / previewRoom.Height;
+
+            // Calculate the metatile index based on the cursor position
+            int metatileX = (int)(e.X / metatilePixelWidth);
+            int metatileY = (int)(e.Y / metatilePixelHeight);
+
+            // Ensure metatileX and metatileY are within bounds
+            metatileX = Math.Max(0, Math.Min(metatileX, previewRoom.Width - 1));
+            metatileY = Math.Max(0, Math.Min(metatileY, previewRoom.Height - 1));
+
+            // Assuming a method to get a metatile's connectivity based on its position in the room
+            var metatile = previewRoom[metatileX, metatileY];
+            if (metatile != null)
+            {
+                // Here, update your toolTip or UI element to show the metatile's info
+                string toolTipText = $"Metatile: [{metatileX}, {metatileY}] | Connectivity: {metatile.Connectivity}";
+                toolTip.SetToolTip(RoomCanvas, toolTipText);
+            }
+            else
+            {
+                toolTip.SetToolTip(RoomCanvas, "Empty space");
+            }
+        }
+
     }
     public enum TileType
     {
@@ -190,23 +398,34 @@ namespace WinFormsApp4
             this.roomLayout = new MetaTile[roomWidth, roomHeight];
         }
 
-        public Room GenerateRoom()
+        public Room GenerateRoom(List<MetaTile> metaTiles = null)
         {
+            bool usePredefinedMetatiles = metaTiles != null && metaTiles.Any();
+
             // Initialize with a starting MetaTile that opens in at least one direction
             int startX = rng.Next(roomWidth);
             int startY = rng.Next(roomHeight);
-            Connectivity startDirection = (Connectivity)rng.Next(1, 16); // Exclude None, include All
-
-            roomLayout[startX, startY] = MetaTile.GenerateMetaTile(startDirection);
-            Debug.WriteLine($"Started at: {startX};{startY} with direction {startDirection}");
+            Debug.WriteLine("starting at " + startX + ", " + startY);
+            if (usePredefinedMetatiles)
+            {
+                // Select a random metatile from the provided list
+                roomLayout[startX, startY] = metaTiles[rng.Next(metaTiles.Count)].DeepCopy(); // Use DeepCopy if necessary to avoid modifying the original
+            }
+            else
+            {
+                Connectivity startDirection = (Connectivity)rng.Next(1, 16); // Exclude None, include All
+                roomLayout[startX, startY] = MetaTile.GenerateMetaTile(startDirection);
+            }
 
             // Add open directions to the queue for the starting tile
-            AddToQueue(startX, startY, startDirection);
+            AddToQueue(startX, startY, roomLayout[startX, startY].Connectivity);
 
             while (expansionQueue.Count > 0)
             {
                 var (x, y, directionFrom) = expansionQueue.Dequeue();
-                TryExpand(x, y, directionFrom);
+                Debug.WriteLine("continuing at " + x + ", " + y);
+
+                TryExpand(x, y, directionFrom, metaTiles);
             }
 
             // Fill the rest with closed tiles
@@ -238,18 +457,37 @@ namespace WinFormsApp4
                 default: return Connectivity.None;
             }
         }
-        private void TryExpand(int x, int y, Connectivity directionFrom)
+        private void TryExpand(int x, int y, Connectivity directionFrom, List<MetaTile> metaTiles = null)
         {
+            bool usePredefinedMetatiles = metaTiles != null && metaTiles.Any();
+
             if (!IsInBounds(x, y) || roomLayout[x, y] != null) return;
 
-            // Generate the new tile with at least the opening back to the tile we're expanding from
-            Connectivity newTileConnectivity = directionFrom | GetRandomConnectivityExcluding(directionFrom);
+            if (usePredefinedMetatiles)
+            {
+                // Select a random metatile from the list, ensuring it can connect in the required direction
+                MetaTile selectedTile = null;
+                var compatibleTiles = metaTiles.Where(mt => ConnectivityExtensions.GetIndividualFlags(mt.Connectivity).Contains(GetOppositeDirection(directionFrom))).ToList();
+                if (compatibleTiles.Any())
+                {
+                    selectedTile = compatibleTiles[rng.Next(compatibleTiles.Count)].DeepCopy(); // Use DeepCopy to avoid modifying the original
+                }
+                roomLayout[x, y] = selectedTile ?? MetaTile.GenerateMetaTile(Connectivity.None); // Fallback to a closed tile if no compatible tile found
+            }
+            else
+            {
+                // Original logic for generating a new metatile based on connectivity
+                Connectivity newTileConnectivity = directionFrom | GetRandomConnectivityExcluding(directionFrom);
+                roomLayout[x, y] = MetaTile.GenerateMetaTile(newTileConnectivity);
+            }
 
-            roomLayout[x, y] = MetaTile.GenerateMetaTile(newTileConnectivity);
-            Debug.WriteLine($"Expanding at: {x};{y} with connectivity: {newTileConnectivity}");
-
-            AddToQueue(x, y, newTileConnectivity);
+            // Proceed with adding to the queue using the newly placed tile's connectivity
+            if (roomLayout[x, y] != null)
+            {
+                AddToQueue(x, y, roomLayout[x, y].Connectivity);
+            }
         }
+
 
         private static (int, int) GetNextCoordinates(int x, int y, Connectivity direction)
         {
@@ -306,6 +544,8 @@ namespace WinFormsApp4
             get => tiles[x, y];
             set => tiles[x, y] = value;
         }
+        public int Width => tiles.GetLength(0);
+        public int Height => tiles.GetLength(1);
         public Bitmap GenerateBitmap()
         {
             int roomWidth = tiles.GetLength(0);
@@ -327,7 +567,7 @@ namespace WinFormsApp4
 
                                 // Assuming the metaTile size matches the Cells array size for simplicity
                                 // Check if the cell is a platform for color, otherwise use the checkerboard logic
-                                color = tile.Cells[i, j] == CellType.Platform ? color : Color.White;
+                                color = tile[i, j] == TileType.Platform ? color : Color.White;
                                 roomBitmap.SetPixel(x * MetaTile.META_TILE_SIZE + i, y * MetaTile.META_TILE_SIZE + j, color);
                             }
                         }
@@ -351,59 +591,91 @@ namespace WinFormsApp4
     public class MetaTile
     {
         public const int META_TILE_SIZE = 10;
-        public CellType[,] Cells { get; private set; }
-        public Connectivity ConnectivityRules { get; private set; }
-        public MetaTile()
-        {
-            Cells = new CellType[META_TILE_SIZE, META_TILE_SIZE];
-            for (int y = 0; y < META_TILE_SIZE; y++)
-            {
-                for (int x = 0; x < META_TILE_SIZE; x++)
-                {
-                    Cells[x, y] = CellType.Air;
-                }
-            }
-            ConnectivityRules = Connectivity.All;
-        }
+        public Connectivity Connectivity { get; set; }
+
+        public TileType[] Tiles { get; set; }
         public MetaTile(Connectivity connectivity) : this()
         {
-            ConnectivityRules = connectivity;
+            Connectivity = connectivity;
             InitializeWalls();
         }
-        public CellType this[int x, int y]
+        public MetaTile()
         {
-            get => Cells[x, y];
-            set => Cells[x, y] = value;
+            Tiles = new TileType[META_TILE_SIZE * META_TILE_SIZE]; // Initialize as a 1D array
+            Connectivity = Connectivity.None;
+            ResetTiles();
+        }
+
+        // Update the indexer to work with a 1D array
+        public TileType this[int x, int y]
+        {
+            get => Tiles[y * META_TILE_SIZE + x];
+            set => Tiles[y * META_TILE_SIZE + x] = value;
+        }
+
+        // Adjust DeepCopy method for 1D array
+        public MetaTile DeepCopy()
+        {
+            MetaTile copy = new();
+            Array.Copy(this.Tiles, copy.Tiles, this.Tiles.Length); // Use Array.Copy for efficiency
+
+            copy.Connectivity = this.Connectivity;
+
+            return copy;
+        }
+
+        // Adjust ResetTiles method for 1D array
+        public void ResetTiles()
+        {
+            for (int i = 0; i < Tiles.Length; i++)
+            {
+                Tiles[i] = TileType.Air; // Reset each tile to Air
+            }
+
+            // Reset all openings to true
+            Connectivity = Connectivity.All;
         }
         private void InitializeWalls()
         {
             // Calculate start and end points for the opening in the middle of each wall
             int openingStart = META_TILE_SIZE / 5; // Start at 25% to create a 50% opening
             int openingEnd = META_TILE_SIZE - openingStart; // End at 75%
-
-            for (int x = 0; x < META_TILE_SIZE; x++)
+            if (Connectivity == Connectivity.None)
             {
-                for (int y = 0; y < META_TILE_SIZE; y++)
+                for (int x = 0; x < META_TILE_SIZE; x++)
                 {
-                    // Determine if we're on an edge
-                    bool isOnEdge = x == 0 || x == META_TILE_SIZE - 1 || y == 0 || y == META_TILE_SIZE - 1;
-
-                    // Check for connectivity and if the current position falls within the opening range
-                    bool shouldHaveOpening = (
-                        (x == 0 && ConnectivityRules.HasFlag(Connectivity.Left) && (y >= openingStart && y < openingEnd)) ||
-                        (x == META_TILE_SIZE - 1 && ConnectivityRules.HasFlag(Connectivity.Right) && (y >= openingStart && y < openingEnd)) ||
-                        (y == 0 && ConnectivityRules.HasFlag(Connectivity.Top) && (x >= openingStart && x < openingEnd)) ||
-                        (y == META_TILE_SIZE - 1 && ConnectivityRules.HasFlag(Connectivity.Bottom) && (x >= openingStart && x < openingEnd))
-                    );
-
-                    // If we're on an edge but not within the opening range, it's a wall
-                    if (isOnEdge && !shouldHaveOpening)
+                    for (int y = 0; y < META_TILE_SIZE; y++)
                     {
-                        Cells[x, y] = CellType.Platform;
+                        this[x, y] = TileType.Platform;
                     }
-                    else
+                }
+            }
+            else
+            {
+                for (int x = 0; x < META_TILE_SIZE; x++)
+                {
+                    for (int y = 0; y < META_TILE_SIZE; y++)
                     {
-                        Cells[x, y] = CellType.Air; // Everything else is air, including the hole
+                        // Determine if we're on an edge
+                        bool isOnEdge = x == 0 || x == META_TILE_SIZE - 1 || y == 0 || y == META_TILE_SIZE - 1;
+
+                        // Check for connectivity and if the current position falls within the opening range
+                        bool shouldHaveOpening = (
+                            (x == 0 && Connectivity.HasFlag(Connectivity.Left) && (y >= openingStart && y < openingEnd)) ||
+                            (x == META_TILE_SIZE - 1 && Connectivity.HasFlag(Connectivity.Right) && (y >= openingStart && y < openingEnd)) ||
+                            (y == 0 && Connectivity.HasFlag(Connectivity.Top) && (x >= openingStart && x < openingEnd)) ||
+                            (y == META_TILE_SIZE - 1 && Connectivity.HasFlag(Connectivity.Bottom) && (x >= openingStart && x < openingEnd))
+                        );
+
+                        // If we're on an edge but not within the opening range, it's a wall
+                        if (isOnEdge && !shouldHaveOpening)
+                        {
+                            this[x, y] = TileType.Platform;
+                        }
+                        else
+                        {
+                            this[x, y] = TileType.Air; // Everything else is air, including the hole
+                        }
                     }
                 }
             }
@@ -412,11 +684,6 @@ namespace WinFormsApp4
         {
             return new MetaTile(connectivity);
         }
-    }
-    public enum CellType
-    {
-        Air,
-        Platform
     }
     [Flags]
     public enum Connectivity
