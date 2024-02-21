@@ -35,6 +35,7 @@
             buttonBottom = new Button();
             button1 = new Button();
             RoomCanvas = new PictureBox();
+            listBoxStatistics = new ListBox();
             ((System.ComponentModel.ISupportInitialize)TileCanvas).BeginInit();
             ((System.ComponentModel.ISupportInitialize)RoomCanvas).BeginInit();
             SuspendLayout();
@@ -87,9 +88,9 @@
             // 
             // button1
             // 
-            button1.Location = new Point(653, 12);
+            button1.Location = new Point(794, 81);
             button1.Name = "button1";
-            button1.Size = new Size(135, 63);
+            button1.Size = new Size(173, 35);
             button1.TabIndex = 5;
             button1.Text = "Save tiles to file";
             button1.UseVisualStyleBackColor = true;
@@ -103,13 +104,24 @@
             RoomCanvas.Size = new Size(300, 300);
             RoomCanvas.TabIndex = 6;
             RoomCanvas.TabStop = false;
+            RoomCanvas.Paint += RoomCanvas_Paint;
             RoomCanvas.MouseMove += RoomCanvas_MouseMove;
+            // 
+            // listBoxStatistics
+            // 
+            listBoxStatistics.FormattingEnabled = true;
+            listBoxStatistics.ItemHeight = 15;
+            listBoxStatistics.Location = new Point(794, 122);
+            listBoxStatistics.Name = "listBoxStatistics";
+            listBoxStatistics.Size = new Size(173, 259);
+            listBoxStatistics.TabIndex = 7;
             // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(800, 463);
+            ClientSize = new Size(1011, 463);
+            Controls.Add(listBoxStatistics);
             Controls.Add(RoomCanvas);
             Controls.Add(button1);
             Controls.Add(buttonBottom);
@@ -135,5 +147,6 @@
         private Button buttonBottom;
         private Button button1;
         private PictureBox RoomCanvas;
+        private ListBox listBoxStatistics;
     }
 }

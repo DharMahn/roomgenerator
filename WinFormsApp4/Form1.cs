@@ -154,35 +154,63 @@ namespace WinFormsApp4
                 control.BackColor = isOpen ? Color.Green : Color.Red;
             }
         }
+        public void CalculateTileUsageStatistics()
+        {
+            Dictionary<Connectivity, int> counts = [];
+            for (int i = 0; i < 16; i++)
+            {
+                counts.Add((Connectivity)i, 0);
+            }
+            foreach (MetaTile tile in metatileList)
+            {
+                counts[tile.Connectivity]++;
+            }
+            listBoxStatistics.Items.Clear();
+            foreach (var entry in counts)
+            {
+                string displayText = $"{entry.Key}: {entry.Value}";
+                listBoxStatistics.Items.Add(displayText);
+            }
+        }
         private void UpdateMetatileConnectivity()
         {
             int middle = MetaTile.META_TILE_SIZE / 2;
-            // For even-sized metatiles, check two middle cells; for odd, just the center cell
             bool isSizeEven = MetaTile.META_TILE_SIZE % 2 == 0;
+            currentTile.Connectivity = Connectivity.None; // Start with no connectivity
 
-            // Check each edge (TOP, BOTTOM, LEFT, RIGHT) based on metatile size
-            // Assuming "Air" means the tile is empty and thus an opening exists
+            // Adjust the logic to check for closed sides based on occupation
+            // For even-sized metatiles, check two middle cells; for odd, just the center cell
             if (isSizeEven)
             {
-                currentTile.Connectivity =
-                    (currentTile[middle - 1, 0] == TileType.Air || currentTile[middle, 0] == TileType.Air ? Connectivity.Top : 0) |
-                    (currentTile[middle - 1, MetaTile.META_TILE_SIZE - 1] == TileType.Air || currentTile[middle, MetaTile.META_TILE_SIZE - 1] == TileType.Air ? Connectivity.Bottom : 0) |
-                    (currentTile[0, middle - 1] == TileType.Air || currentTile[0, middle] == TileType.Air ? Connectivity.Left : 0) |
-                    (currentTile[MetaTile.META_TILE_SIZE - 1, middle - 1] == TileType.Air || currentTile[MetaTile.META_TILE_SIZE - 1, middle] == TileType.Air ? Connectivity.Right : 0);
+                currentTile.Connectivity |=
+                    (currentTile[middle - 1, 0] != TileType.Air || currentTile[middle, 0] != TileType.Air) ? 0 : Connectivity.Top;
+                currentTile.Connectivity |=
+                    (currentTile[middle - 1, MetaTile.META_TILE_SIZE - 1] != TileType.Air || currentTile[middle, MetaTile.META_TILE_SIZE - 1] != TileType.Air) ? 0 : Connectivity.Bottom;
+                currentTile.Connectivity |=
+                    (currentTile[0, middle - 1] != TileType.Air || currentTile[0, middle] != TileType.Air) ? 0 : Connectivity.Left;
+                currentTile.Connectivity |=
+                    (currentTile[MetaTile.META_TILE_SIZE - 1, middle - 1] != TileType.Air || currentTile[MetaTile.META_TILE_SIZE - 1, middle] != TileType.Air) ? 0 : Connectivity.Right;
             }
             else
             {
-                currentTile.Connectivity =
-                    (currentTile[middle, 0] == TileType.Air ? Connectivity.Top : 0) |
-                    (currentTile[middle, MetaTile.META_TILE_SIZE - 1] == TileType.Air ? Connectivity.Bottom : 0) |
-                    (currentTile[0, middle] == TileType.Air ? Connectivity.Left : 0) |
-                    (currentTile[MetaTile.META_TILE_SIZE - 1, middle] == TileType.Air ? Connectivity.Right : 0);
+                currentTile.Connectivity |=
+                    (currentTile[middle, 0] != TileType.Air) ? 0 : Connectivity.Top;
+                currentTile.Connectivity |=
+                    (currentTile[middle, MetaTile.META_TILE_SIZE - 1] != TileType.Air) ? 0 : Connectivity.Bottom;
+                currentTile.Connectivity |=
+                    (currentTile[0, middle] != TileType.Air) ? 0 : Connectivity.Left;
+                currentTile.Connectivity |=
+                    (currentTile[MetaTile.META_TILE_SIZE - 1, middle] != TileType.Air) ? 0 : Connectivity.Right;
             }
+
+            // Update the UI to reflect the new connectivity state
             UpdateSideColor(buttonTop);
+            UpdateSideColor(buttonBottom);
             UpdateSideColor(buttonLeft);
             UpdateSideColor(buttonRight);
-            UpdateSideColor(buttonBottom);
         }
+
+
         private void TileCanvas_Paint(object sender, PaintEventArgs e)
         {
             e.Graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
@@ -211,6 +239,7 @@ namespace WinFormsApp4
         {
             if (e.KeyCode == Keys.N)
             {
+                currentTile = currentTile.DeepCopy();
                 currentMetatileIndex = -1;
                 UpdateUI();
                 e.Handled = true;
@@ -258,9 +287,10 @@ namespace WinFormsApp4
             }
             else if (e.KeyCode == Keys.G)
             {
-                RoomGenerator gen = new(10, 10);
+                RoomGenerator gen = new(4, 4);
                 previewRoom = gen.GenerateRoom(metatileList); // Assuming GeneratePreviewRoom is your method
                 RoomCanvas.BackgroundImageLayout = ImageLayout.Stretch;
+                RoomCanvas.SizeMode = PictureBoxSizeMode.Normal;
                 RoomCanvas.BackgroundImage = previewRoom.GenerateBitmap(); // Generate and set the background image
                 e.Handled = true; // Mark the event as handled
             }
@@ -271,7 +301,7 @@ namespace WinFormsApp4
             {
                 // Assuming you have a method or logic to display or edit the selected metatile
                 // For example, this could update the UI to reflect the metatile at 'index'
-                currentTile = metatileList[index]; // Set the currentTile to the selected one for editing
+                currentTile = metatileList[index].DeepCopy(); // Set the currentTile to the selected one for editing
                 UpdateUI();
             }
         }
@@ -302,28 +332,46 @@ namespace WinFormsApp4
                 metatileList.Add(currentTile);
                 currentTile = currentTile.DeepCopy();
             }
+            CalculateTileUsageStatistics();
         }
-        public void SaveMetatiles(string filePath)
+        public void SaveMetatiles()
         {
-            var options = new JsonSerializerOptions { WriteIndented = true };
+            var options = new JsonSerializerOptions { WriteIndented = false };
             string jsonString = JsonSerializer.Serialize(metatileList, options);
+
+            // Combine the base directory with your 'Data' folder and the filename
+            string dataDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data");
+            if (!Directory.Exists(dataDirectory))
+            {
+                Directory.CreateDirectory(dataDirectory); // Ensure the Data directory exists
+            }
+            string filePath = Path.Combine(dataDirectory, "metatiles.json");
+
             File.WriteAllText(filePath, jsonString);
-            ShowToastNotification($"Saved {metatileList.Count} tiles.");
+            ShowToastNotification($"Saved {metatileList.Count} tiles to {filePath}.");
         }
-        public void LoadMetatiles(string filePath = @"./metatiles.json")
+
+        public void LoadMetatiles()
         {
-            List<MetaTile> metatiles = null;
+            string dataDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data");
+            string filePath = Path.Combine(dataDirectory, "metatiles.json");
+
             if (!File.Exists(filePath))
             {
-                ShowToastNotification("No metatiles found in executing folder.");
+                ShowToastNotification("No saved tiles found.");
+            }
+
+            string jsonString = File.ReadAllText(filePath);
+            if (!string.IsNullOrEmpty(jsonString))
+            {
+                metatileList = JsonSerializer.Deserialize<List<MetaTile>>(jsonString);
+                ShowToastNotification($"Loaded {metatileList!.Count} metatiles.");
             }
             else
             {
-                string jsonString = File.ReadAllText(filePath);
-                metatiles = JsonSerializer.Deserialize<List<MetaTile>>(jsonString);
-                ShowToastNotification($"Loaded {metatiles.Count} tiles.");
+                ShowToastNotification("No saved tiles found.");
             }
-            metatileList = metatiles ?? new();
+            CalculateTileUsageStatistics();
         }
         private ToastForm toastForm;
 
@@ -348,7 +396,7 @@ namespace WinFormsApp4
 
         private void button1_Click(object sender, EventArgs e)
         {
-            SaveMetatiles("metatiles.json");
+            SaveMetatiles();
         }
         ToolTip toolTip = new();
         private void RoomCanvas_MouseMove(object sender, MouseEventArgs e)
@@ -387,6 +435,26 @@ namespace WinFormsApp4
             }
         }
 
+        private void RoomCanvas_Paint(object sender, PaintEventArgs e)
+        {
+            if (RoomCanvas.BackgroundImage != null)
+            {
+                // Set the interpolation mode
+                e.Graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.NearestNeighbor;
+
+                // Calculate the scale factor to maintain aspect ratio
+                float scaleX = (float)RoomCanvas.Width / RoomCanvas.BackgroundImage.Width;
+                float scaleY = (float)RoomCanvas.Height / RoomCanvas.BackgroundImage.Height;
+                float scale = Math.Min(scaleX, scaleY);
+
+                // Calculate the position to center the image
+                int posX = (int)((RoomCanvas.Width - (RoomCanvas.BackgroundImage.Width * scale)) / 2);
+                int posY = (int)((RoomCanvas.Height - (RoomCanvas.BackgroundImage.Height * scale)) / 2);
+
+                // Draw the image
+                e.Graphics.DrawImage(RoomCanvas.BackgroundImage, new Rectangle(posX, posY, (int)(RoomCanvas.BackgroundImage.Width * scale), (int)(RoomCanvas.BackgroundImage.Height * scale)));
+            }
+        }
     }
     public enum TileType
     {
@@ -417,7 +485,7 @@ namespace WinFormsApp4
     {
         private int roomWidth, roomHeight;
         private MetaTile[,] roomLayout;
-        private Queue<(int x, int y, Connectivity directionFrom)> expansionQueue = new Queue<(int x, int y, Connectivity directionFrom)>();
+        private Queue<(int x, int y, Connectivity directionFrom)> expansionQueue = new();
         private Random rng = new Random();
 
         public RoomGenerator(int roomWidth, int roomHeight)
@@ -430,32 +498,42 @@ namespace WinFormsApp4
         public Room GenerateRoom(List<MetaTile> metaTiles = null)
         {
             bool usePredefinedMetatiles = metaTiles != null && metaTiles.Any();
-
-            // Initialize with a starting MetaTile that opens in at least one direction
-            int startX = rng.Next(roomWidth);
-            int startY = rng.Next(roomHeight);
-            Debug.WriteLine("starting at " + startX + ", " + startY);
-            if (usePredefinedMetatiles)
+            int metatilePlaced;
+            int tries = 0;
+            do
             {
-                // Select a random metatile from the provided list
-                roomLayout[startX, startY] = metaTiles[rng.Next(metaTiles.Count)].DeepCopy(); // Use DeepCopy if necessary to avoid modifying the original
-            }
-            else
-            {
-                Connectivity startDirection = (Connectivity)rng.Next(1, 16); // Exclude None, include All
-                roomLayout[startX, startY] = MetaTile.GenerateMetaTile(startDirection);
-            }
+                metatilePlaced = 0;
+                tries++;
+                expansionQueue.Clear();
+                roomLayout = new MetaTile[roomWidth, roomHeight];
+                Debug.WriteLine($"try #{tries}");
+                // Initialize with a starting MetaTile that opens in at least one direction
+                int startX = rng.Next(roomWidth);
+                int startY = 0;
+                Debug.WriteLine("starting at " + startX + ", " + startY);
+                if (usePredefinedMetatiles)
+                {
+                    // Select a random metatile from the provided list
+                    roomLayout[startX, startY] = metaTiles[rng.Next(metaTiles.Count)].DeepCopy(); // Use DeepCopy if necessary to avoid modifying the original
+                }
+                else
+                {
+                    Connectivity startDirection = (Connectivity)rng.Next(1, 16); // Exclude None, include All
+                    roomLayout[startX, startY] = MetaTile.GenerateMetaTile(startDirection);
+                }
 
-            // Add open directions to the queue for the starting tile
-            AddToQueue(startX, startY, roomLayout[startX, startY].Connectivity);
+                // Add open directions to the queue for the starting tile
+                AddToQueue(startX, startY, roomLayout[startX, startY].Connectivity);
 
-            while (expansionQueue.Count > 0)
-            {
-                var (x, y, directionFrom) = expansionQueue.Dequeue();
-                Debug.WriteLine("continuing at " + x + ", " + y);
+                while (expansionQueue.Count > 0)
+                {
+                    var (x, y, directionFrom) = expansionQueue.Dequeue();
+                    Debug.WriteLine("continuing at " + x + ", " + y);
 
-                TryExpand(x, y, directionFrom, metaTiles);
-            }
+                    TryExpand(x, y, directionFrom, metaTiles);
+                    metatilePlaced++;
+                }
+            } while (metatilePlaced < Math.Min(roomWidth, roomHeight) && tries < 5);
 
             // Fill the rest with closed tiles
             FillRemainingWithClosedTiles();
@@ -497,7 +575,7 @@ namespace WinFormsApp4
                 // Select a random metatile from the list, ensuring it can connect in the required direction
                 MetaTile selectedTile = null;
                 var compatibleTiles = metaTiles.Where(mt => ConnectivityExtensions.GetIndividualFlags(mt.Connectivity).Contains(directionFrom)).ToList();
-                if (compatibleTiles.Any())
+                if (compatibleTiles.Count != 0)
                 {
                     selectedTile = compatibleTiles[rng.Next(compatibleTiles.Count)].DeepCopy(); // Use DeepCopy to avoid modifying the original
                 }
