@@ -355,13 +355,15 @@ namespace WinFormsApp4
         {
             string dataDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Data");
             string filePath = Path.Combine(dataDirectory, "metatiles.json");
-
+            string jsonString = "";
             if (!File.Exists(filePath))
             {
                 ShowToastNotification("No saved tiles found.");
             }
-
-            string jsonString = File.ReadAllText(filePath);
+            else
+            {
+                jsonString = File.ReadAllText(filePath);
+            }
             if (!string.IsNullOrEmpty(jsonString))
             {
                 metatileList = JsonSerializer.Deserialize<List<MetaTile>>(jsonString);
