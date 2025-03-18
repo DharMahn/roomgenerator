@@ -36,6 +36,8 @@
             button1 = new Button();
             RoomCanvas = new PictureBox();
             listBoxStatistics = new ListBox();
+            DrawGridCheckBox = new CheckBox();
+            DrawHistoryCheckBox = new CheckBox();
             ((System.ComponentModel.ISupportInitialize)TileCanvas).BeginInit();
             ((System.ComponentModel.ISupportInitialize)RoomCanvas).BeginInit();
             SuspendLayout();
@@ -104,11 +106,13 @@
             RoomCanvas.Size = new Size(300, 300);
             RoomCanvas.TabIndex = 6;
             RoomCanvas.TabStop = false;
+            RoomCanvas.Click += RoomCanvas_Click;
             RoomCanvas.Paint += RoomCanvas_Paint;
             RoomCanvas.MouseMove += RoomCanvas_MouseMove;
             // 
             // listBoxStatistics
             // 
+            listBoxStatistics.Enabled = false;
             listBoxStatistics.FormattingEnabled = true;
             listBoxStatistics.ItemHeight = 15;
             listBoxStatistics.Location = new Point(794, 122);
@@ -116,11 +120,35 @@
             listBoxStatistics.Size = new Size(173, 259);
             listBoxStatistics.TabIndex = 7;
             // 
+            // DrawGridCheckBox
+            // 
+            DrawGridCheckBox.AutoSize = true;
+            DrawGridCheckBox.Location = new Point(488, 56);
+            DrawGridCheckBox.Name = "DrawGridCheckBox";
+            DrawGridCheckBox.Size = new Size(77, 19);
+            DrawGridCheckBox.TabIndex = 8;
+            DrawGridCheckBox.Text = "Draw grid";
+            DrawGridCheckBox.UseVisualStyleBackColor = true;
+            DrawGridCheckBox.CheckedChanged += Settings_Changed;
+            // 
+            // DrawHistoryCheckBox
+            // 
+            DrawHistoryCheckBox.AutoSize = true;
+            DrawHistoryCheckBox.Location = new Point(571, 56);
+            DrawHistoryCheckBox.Name = "DrawHistoryCheckBox";
+            DrawHistoryCheckBox.Size = new Size(92, 19);
+            DrawHistoryCheckBox.TabIndex = 9;
+            DrawHistoryCheckBox.Text = "Draw history";
+            DrawHistoryCheckBox.UseVisualStyleBackColor = true;
+            DrawHistoryCheckBox.CheckedChanged += Settings_Changed;
+            // 
             // Form1
             // 
             AutoScaleDimensions = new SizeF(7F, 15F);
             AutoScaleMode = AutoScaleMode.Font;
             ClientSize = new Size(1011, 463);
+            Controls.Add(DrawHistoryCheckBox);
+            Controls.Add(DrawGridCheckBox);
             Controls.Add(listBoxStatistics);
             Controls.Add(RoomCanvas);
             Controls.Add(button1);
@@ -129,13 +157,18 @@
             Controls.Add(buttonLeft);
             Controls.Add(buttonTop);
             Controls.Add(TileCanvas);
+            HelpButton = true;
+            MaximizeBox = false;
+            MinimizeBox = false;
             Name = "Form1";
             Text = "Form1";
+            HelpButtonClicked += Form1_HelpButtonClicked;
             KeyDown += Form1_KeyDown;
             Move += Form1_Move;
             ((System.ComponentModel.ISupportInitialize)TileCanvas).EndInit();
             ((System.ComponentModel.ISupportInitialize)RoomCanvas).EndInit();
             ResumeLayout(false);
+            PerformLayout();
         }
 
         #endregion
@@ -148,5 +181,7 @@
         private Button button1;
         private PictureBox RoomCanvas;
         private ListBox listBoxStatistics;
+        private CheckBox DrawGridCheckBox;
+        private CheckBox DrawHistoryCheckBox;
     }
 }
