@@ -1,9 +1,6 @@
 using System.Diagnostics;
-using System.Drawing.Imaging;
-using System.Runtime.Serialization;
 using System.Text;
 using System.Text.Json;
-using System.Windows.Forms;
 namespace WinFormsApp4
 {
     public partial class Form1 : Form
@@ -11,8 +8,8 @@ namespace WinFormsApp4
         private static Form1? _instance = null;
         public static Form1 Instance => _instance ??= new Form1();
         TileType selectedType = TileType.Platform;
-        private bool isMousePressed = false; // Track if the mouse is pressed
-        private Dictionary<string, Connectivity> controlTextToConnectivity = new Dictionary<string, Connectivity>
+        private bool isMousePressed = false;
+        private static readonly Dictionary<string, Connectivity> controlTextToConnectivity = new()
         {
             ["TOP"] = Connectivity.Top,
             ["BOTTOM"] = Connectivity.Bottom,
@@ -22,7 +19,7 @@ namespace WinFormsApp4
         Room? previewRoom;
         MetaTile currentTile;
         private int currentMetatileIndex = -1; // Start with -1 indicating no selection
-        public static List<MetaTile> metatileList = new();
+        public static List<MetaTile> metatileList = [];
         public Form1()
         {
             InitializeComponent();
@@ -146,7 +143,7 @@ namespace WinFormsApp4
 
         private void ModifyTile(object sender, MouseEventArgs e)
         {
-            PictureBox pictureBox = sender as PictureBox;
+            PictureBox pictureBox = (sender as PictureBox)!;
             int controlWidth = pictureBox.Width;
             int controlHeight = pictureBox.Height;
 
@@ -331,8 +328,6 @@ namespace WinFormsApp4
         {
             if (index >= 0 && index < metatileList.Count)
             {
-                // Assuming you have a method or logic to display or edit the selected metatile
-                // For example, this could update the UI to reflect the metatile at 'index'
                 currentTile = metatileList[index].DeepCopy(); // Set the currentTile to the selected one for editing
                 UpdateUI();
             }
@@ -398,8 +393,8 @@ namespace WinFormsApp4
             }
             if (!string.IsNullOrEmpty(jsonString))
             {
-                metatileList = JsonSerializer.Deserialize<List<MetaTile>>(jsonString);
-                ShowToastNotification($"Loaded {metatileList!.Count} metatiles.");
+                metatileList = JsonSerializer.Deserialize<List<MetaTile>>(jsonString) ?? [];
+                ShowToastNotification($"Loaded {metatileList.Count} metatiles.");
             }
             else
             {
@@ -489,7 +484,7 @@ namespace WinFormsApp4
                 RoomCanvas.BackgroundImage,
                 new Rectangle(posX, posY, (int)(RoomCanvas.BackgroundImage.Width * scale), (int)(RoomCanvas.BackgroundImage.Height * scale))
             );
-
+            if (previewRoom == null) return;
             if (DrawGridCheckBox.Checked)
             {
                 for (int y = 0; y < previewRoom.Height; y++)
@@ -514,7 +509,7 @@ namespace WinFormsApp4
 
             if (DrawHistoryCheckBox.Checked)
             {
-                using Pen arrowPen = new (Color.Red, 2);
+                using Pen arrowPen = new(Color.Red, 2);
                 arrowPen.CustomEndCap = new System.Drawing.Drawing2D.AdjustableArrowCap(3, 5);
 
                 // For each expansion record (fx, fy) -> (tx, ty)
@@ -539,7 +534,7 @@ namespace WinFormsApp4
         private void Form1_HelpButtonClicked(object sender, System.ComponentModel.CancelEventArgs e)
         {
             e.Cancel = true;
-            string tutorialMessage =
+            const string tutorialMessage =
                 "Keyboard Shortcuts:\n\n" +
                 "N - Create a new tile.\n" +
                 "C - Reset the current metatile.\n" +
@@ -672,7 +667,7 @@ namespace WinFormsApp4
         {
             // If we have a predefined list of MetaTiles, expand it to include
             // all rotated/flipped variants.
-            bool usePredefinedMetatiles = metaTiles != null && metaTiles.Any();
+            bool usePredefinedMetatiles = metaTiles != null && metaTiles.Count > 0;
             if (usePredefinedMetatiles)
             {
                 var expanded = new List<MetaTile>();
@@ -714,7 +709,7 @@ namespace WinFormsApp4
                 tries++;
                 expansionQueue.Clear();
                 roomLayout = new MetaTile[roomWidth, roomHeight];
-                Debug.WriteLine($"try #{tries}");
+                //Debug.WriteLine($"try #{tries}");
 
                 // Pick a random start position at the top
                 int startX = rng.Next(roomWidth);
@@ -743,12 +738,11 @@ namespace WinFormsApp4
                     //Debug.WriteLine("continuing at " + request.ToX + ", " + request.ToY);
 
                     // Try to place new tiles branching from the current tile's open sides
-                    TryExpand(request.FromX, request.FromY, request.ToX, request.ToY, request.DirectionFrom, metaTiles);
+                    TryExpand(request.FromX, request.FromY, request.ToX, request.ToY, request.DirectionFrom, metaTiles!);
                     metatilePlaced++;
                 }
             }
             while (metatilePlaced < Math.Min(roomWidth, roomHeight) * 4 /*&& tries < 50*/);
-
             // Once we can’t expand further, fill the rest of the room with closed tiles
             FillRemainingWithClosedTiles();
             return new Room(roomLayout);
@@ -767,9 +761,9 @@ namespace WinFormsApp4
                 {
                     (int nx, int ny) = degrees switch
                     {
-                        90 => (size - 1 - y, x),             
-                        180 => (size - 1 - x, size - 1 - y), 
-                        270 => (y, size - 1 - x),            
+                        90 => (size - 1 - y, x),
+                        180 => (size - 1 - x, size - 1 - y),
+                        270 => (y, size - 1 - x),
                         _ => (x, y)
                     };
 
@@ -824,7 +818,7 @@ namespace WinFormsApp4
         /// Flips the tile horizontally (left edge becomes right edge) 
         /// and updates Connectivity accordingly.
         /// </summary>
-        private MetaTile FlipMetaTileHorizontal(MetaTile original)
+        private static MetaTile FlipMetaTileHorizontal(MetaTile original)
         {
             var copy = new MetaTile();
             int size = MetaTile.META_TILE_SIZE;
@@ -849,7 +843,7 @@ namespace WinFormsApp4
         /// Flips the Connectivity bits horizontally (Left <-> Right). 
         /// Top and Bottom remain the same.
         /// </summary>
-        private Connectivity FlipConnectivityHorizontal(Connectivity c)
+        private static Connectivity FlipConnectivityHorizontal(Connectivity c)
         {
             Connectivity result = Connectivity.None;
 
@@ -884,27 +878,27 @@ namespace WinFormsApp4
         }
         private static Connectivity GetOppositeDirection(Connectivity direction)
         {
-            switch (direction)
+            return direction switch
             {
-                case Connectivity.Left: return Connectivity.Right;
-                case Connectivity.Right: return Connectivity.Left;
-                case Connectivity.Top: return Connectivity.Bottom;
-                case Connectivity.Bottom: return Connectivity.Top;
-                default: return Connectivity.None;
-            }
+                Connectivity.Left => Connectivity.Right,
+                Connectivity.Right => Connectivity.Left,
+                Connectivity.Top => Connectivity.Bottom,
+                Connectivity.Bottom => Connectivity.Top,
+                _ => Connectivity.None,
+            };
         }
-        public static List<(int fromX, int fromY, int toX, int toY)> expansionRecords = new();
+        public static List<(int fromX, int fromY, int toX, int toY)> expansionRecords = [];
         private void TryExpand(int fromX, int fromY, int x, int y, Connectivity directionFrom, List<MetaTile> metaTiles)
         {
             if (!IsInBounds(x, y) || roomLayout[x, y] != null) return;
 
-            bool usePredefinedMetatiles = metaTiles != null && metaTiles.Any();
+            bool usePredefinedMetatiles = metaTiles != null && metaTiles.Count > 0;
 
             // (Choose the tile from metaTiles or generate a random tile)
             if (usePredefinedMetatiles)
             {
                 // e.g. pick a tile that has 'directionFrom' in its connectivity
-                var compatibleTiles = metaTiles
+                var compatibleTiles = metaTiles!
                     .Where(mt => mt.Connectivity.HasFlag(directionFrom))
                     .ToList();
 
@@ -940,14 +934,14 @@ namespace WinFormsApp4
 
         private static (int, int) GetNextCoordinates(int x, int y, Connectivity direction)
         {
-            switch (direction)
+            return direction switch
             {
-                case Connectivity.Left: return (x - 1, y);
-                case Connectivity.Right: return (x + 1, y);
-                case Connectivity.Top: return (x, y - 1);
-                case Connectivity.Bottom: return (x, y + 1);
-                default: return (x, y); // Should never happen
-            }
+                Connectivity.Left => (x - 1, y),
+                Connectivity.Right => (x + 1, y),
+                Connectivity.Top => (x, y - 1),
+                Connectivity.Bottom => (x, y + 1),
+                _ => (x, y),// Should never happen
+            };
         }
 
         private bool IsInBounds(int x, int y) => x >= 0 && x < roomWidth && y >= 0 && y < roomHeight;
@@ -977,7 +971,6 @@ namespace WinFormsApp4
             }
         }
     }
-
     public class Room
     {
         MetaTile[,] tiles;
@@ -1011,12 +1004,7 @@ namespace WinFormsApp4
                         {
                             for (int j = 0; j < MetaTile.META_TILE_SIZE; j++)
                             {
-                                bool isCheckerBlack = (x + y) % 2 == 0; // Black for even sums, green for odd sums
-                                Color color = isCheckerBlack ? Color.Black : Color.Black;
-
-                                // Assuming the metaTile size matches the Cells array size for simplicity
-                                // Check if the cell is a platform for color, otherwise use the checkerboard logic
-                                color = tile[i, j] == TileType.Platform ? color : Color.White;
+                                Color color = tile[i, j] == TileType.Platform ? Color.Black : Color.White;
                                 roomBitmap.SetPixel(x * MetaTile.META_TILE_SIZE + i, y * MetaTile.META_TILE_SIZE + j, color);
                             }
                         }
