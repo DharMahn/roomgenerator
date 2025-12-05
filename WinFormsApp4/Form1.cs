@@ -404,9 +404,8 @@ namespace WinFormsApp4
         }
         private ToastForm? toastForm;
 
-        private void ShowToastNotification(string message, int duration = 1000)
+        private void ShowToastNotification(string message, int duration = 2000)
         {
-            // Close existing toast if any
             toastForm?.Close();
 
             toastForm = new ToastForm(message, duration);
@@ -414,7 +413,6 @@ namespace WinFormsApp4
             toastForm.PositionRelativeToForm(this);
         }
 
-        // Main form's Move event handler
         private void Form1_Move(object sender, EventArgs e)
         {
             if (toastForm != null && !toastForm.IsDisposed)
@@ -526,6 +524,21 @@ namespace WinFormsApp4
 
                     // Draw the arrow from parent tile to child tile
                     e.Graphics.DrawLine(arrowPen, fromX, fromY, toX, toY);
+                }
+                //draw numbers in the center of each tile based on tileDepths
+                using Font font = new("Arial", 8, FontStyle.Bold);
+                foreach (var kvp in RoomGenerator.tileDepths)
+                {
+                    int x = kvp.Key.x;
+                    int y = kvp.Key.y;
+                    int depth = kvp.Value;
+                    // Calculate the position to draw the number
+                    float textPosX = (x + 0.5f) * tileWidth;
+                    float textPosY = (y + 0.5f) * tileHeight;
+                    // Draw the number at the center of the tile with a white background
+                    SizeF textSize = e.Graphics.MeasureString(depth.ToString(), font);
+                    e.Graphics.FillRectangle(Brushes.Gray, textPosX - textSize.Width / 2, textPosY - textSize.Height / 2, textSize.Width, textSize.Height);
+                    e.Graphics.DrawString(depth.ToString(), font, Brushes.White, textPosX - textSize.Width / 2, textPosY - textSize.Height / 2);
                 }
             }
         }
@@ -654,6 +667,8 @@ namespace WinFormsApp4
         private int roomWidth, roomHeight;
         private MetaTile[,] roomLayout;
         private Queue<ExpansionRequest> expansionQueue = new();
+        public static Dictionary<(int x, int y), int> tileDepths = [];
+
         private Random rng = new();
 
         public RoomGenerator(int roomWidth, int roomHeight)
@@ -662,7 +677,20 @@ namespace WinFormsApp4
             this.roomHeight = roomHeight;
             this.roomLayout = new MetaTile[roomWidth, roomHeight];
         }
-
+        /// <summary>
+        /// Generates a new room layout by placing MetaTiles in a grid, starting from a random position and expanding
+        /// outward based on connectivity rules.
+        /// </summary>
+        /// <remarks>The method attempts to generate a room layout by placing MetaTiles in a grid,
+        /// ensuring that connectivity rules are satisfied between adjacent tiles. If a predefined list of MetaTiles is
+        /// provided, it will be expanded to include all rotated and flipped variants before being used. The generation
+        /// process continues until a sufficient number of tiles are placed or no further expansion is possible. Any
+        /// remaining empty spaces in the grid are filled with closed tiles.</remarks>
+        /// <param name="metaTiles">An optional list of predefined <see cref="MetaTile"/> objects to use for room generation. If provided, all
+        /// rotated and flipped variants of the MetaTiles will be included in the generation process. If null or empty,
+        /// MetaTiles will be generated randomly.</param>
+        /// <returns>A <see cref="Room"/> object representing the generated room layout, with MetaTiles placed according to
+        /// connectivity rules.</returns>
         public Room GenerateRoom(List<MetaTile>? metaTiles = null)
         {
             // If we have a predefined list of MetaTiles, expand it to include
@@ -698,7 +726,7 @@ namespace WinFormsApp4
                 // Replace metaTiles with the expanded list
                 metaTiles = expanded;
             }
-            Debug.WriteLine($"We have {metaTiles?.Count} metatiles.");
+            //Debug.WriteLine($"We have {metaTiles?.Count} metatiles.");
             int metatilePlaced;
             int tries = 0;
 
@@ -708,6 +736,7 @@ namespace WinFormsApp4
                 metatilePlaced = 0;
                 tries++;
                 expansionQueue.Clear();
+                tileDepths.Clear();
                 roomLayout = new MetaTile[roomWidth, roomHeight];
                 //Debug.WriteLine($"try #{tries}");
 
@@ -720,12 +749,14 @@ namespace WinFormsApp4
                 {
                     // Randomly pick from the expanded set (DeepCopy to avoid referencing the same object).
                     roomLayout[startX, startY] = metaTiles![rng.Next(metaTiles.Count)].DeepCopy();
+                    tileDepths[(startX, startY)] = 0; // Initialize depth for the starting tile
                 }
                 else
                 {
                     // Random connectivity from (1..15) excludes None=0, includes all combos
                     Connectivity startDirection = (Connectivity)rng.Next(1, 16);
                     roomLayout[startX, startY] = MetaTile.GenerateMetaTile(startDirection);
+                    tileDepths[(startX, startY)] = 0; // Initialize depth for the starting tile
                 }
 
                 // Enqueue any open directions from the starting tile
@@ -888,6 +919,22 @@ namespace WinFormsApp4
             };
         }
         public static List<(int fromX, int fromY, int toX, int toY)> expansionRecords = [];
+        /// <summary>
+        /// Attempts to expand the room layout by placing a new tile at the specified coordinates based on the given
+        /// connectivity and optional predefined tiles.
+        /// </summary>
+        /// <remarks>This method places a new tile at the specified target location if it is within bounds
+        /// and unoccupied. If a list of predefined tiles is provided, the method selects a tile that matches the
+        /// specified connectivity. If no compatible tile is found or no predefined tiles are provided, a random tile is
+        /// generated. The method also records the expansion for visualization purposes and queues further expansions
+        /// based on the connectivity of the newly placed tile.</remarks>
+        /// <param name="fromX">The X-coordinate of the tile from which the expansion originates.</param>
+        /// <param name="fromY">The Y-coordinate of the tile from which the expansion originates.</param>
+        /// <param name="x">The X-coordinate of the target location for the new tile.</param>
+        /// <param name="y">The Y-coordinate of the target location for the new tile.</param>
+        /// <param name="directionFrom">The connectivity direction from the originating tile to the target location.</param>
+        /// <param name="metaTiles">An optional list of predefined <see cref="MetaTile"/> objects to use for placement. If provided, a
+        /// compatible tile is selected based on the specified connectivity; otherwise, a random tile is generated.</param>
         private void TryExpand(int fromX, int fromY, int x, int y, Connectivity directionFrom, List<MetaTile> metaTiles)
         {
             if (!IsInBounds(x, y) || roomLayout[x, y] != null) return;
@@ -924,7 +971,7 @@ namespace WinFormsApp4
             {
                 // E.g., record expansions so we can draw arrows
                 expansionRecords.Add((fromX, fromY, x, y));
-
+                tileDepths[(x,y)] = tileDepths[(fromX, fromY)] + 1;
                 // Now queue new expansions from the newly placed tile
                 AddToQueue(x, y, roomLayout[x, y].Connectivity);
             }
@@ -956,7 +1003,11 @@ namespace WinFormsApp4
             } while ((result & exclude) != 0);
             return result;
         }
-
+        /// <summary>
+        /// Fills all uninitialized positions in the room layout with closed tiles.
+        /// </summary>
+        /// <remarks>This method iterates through the entire room layout and replaces any null entries
+        /// with a closed tile, ensuring that all positions in the layout are populated.</remarks>
         private void FillRemainingWithClosedTiles()
         {
             for (int x = 0; x < roomWidth; x++)
@@ -966,7 +1017,7 @@ namespace WinFormsApp4
                     if (roomLayout[x, y] == null)
                     {
                         roomLayout[x, y] = MetaTile.GenerateMetaTile(Connectivity.None); // Closed tile
-                    }
+                    }   
                 }
             }
         }
@@ -988,6 +1039,15 @@ namespace WinFormsApp4
         }
         public int Width => tiles.GetLength(0);
         public int Height => tiles.GetLength(1);
+        /// <summary>
+        /// Generates a bitmap representation of the room based on its tiles.
+        /// </summary>
+        /// <remarks>Each tile in the room is represented as a <see cref="MetaTile"/> object, which is
+        /// rendered into the bitmap. Tiles of type <see cref="TileType.Platform"/> are drawn in black, while all other
+        /// tiles are drawn in white. If a tile is null, the corresponding area in the bitmap is filled with white. The
+        /// size of the resulting bitmap is determined by the dimensions of the room and the size of each
+        /// meta-tile.</remarks>
+        /// <returns>A <see cref="Bitmap"/> object representing the room, where each tile is rendered as a grid of pixels.</returns>
         public Bitmap GenerateBitmap()
         {
             int roomWidth = tiles.GetLength(0);
